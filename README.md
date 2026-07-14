@@ -10,6 +10,7 @@ A React + Vite dashboard for visualizing live NIFTY option chain data in a simpl
 - Next market open display
 - CSV and Excel export for collected data
 - Vercel-ready frontend deployment
+- AI-powered features are planned for future implementation and are not part of the current app yet
 
 ## Tech Stack
 
