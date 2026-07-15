@@ -250,12 +250,12 @@ function App() {
                 <p className="text-xl font-semibold">{formatIndianNumber(summary.latestCeOi)}</p>
               </div>
               <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">Latest PE OI</p>
+                <p className="text-xl font-semibold">{formatIndianNumber(summary.latestPeOi)}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">Expiry</p>
                 <p className="text-xl font-semibold">{expiry || "-"}</p>
-              </div>
-              <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Samples</p>
-                <p className="text-xl font-semibold">{summary.totalSamples}</p>
               </div>
               {!isSessionActive && (
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
