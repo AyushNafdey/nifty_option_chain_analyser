@@ -44,6 +44,9 @@ function formatNextOpenLabel(date) {
 
 function formatTime(date) {
   return date.toLocaleTimeString([], {
+    day: '2-digit',
+    month: '2-digit', 
+    year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -110,6 +113,7 @@ function App() {
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [nextOpenLabel, setNextOpenLabel] = useState(() => formatNextOpenLabel(getNextMarketOpenTime()))
   const lastSessionDateRef = useRef(null)
+  const [expiry, setExpiry] = useState("")
 
   useEffect(() => {
     let isMounted = true
@@ -154,6 +158,7 @@ function App() {
         if (!isMounted) return
 
         const data = result?.data ?? {}
+        setExpiry(data.selectedExpiry ?? "")
         const snapshot = {
           time: formatTime(now),
           ceOi: data['Total CE OI'] ?? 0,
@@ -243,6 +248,10 @@ function App() {
               <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">Latest CE OI</p>
                 <p className="text-xl font-semibold">{formatIndianNumber(summary.latestCeOi)}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">Expiry</p>
+                <p className="text-xl font-semibold">{expiry || "-"}</p>
               </div>
               <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Samples</p>
