@@ -57,7 +57,7 @@ function formatIndianNumber(value) {
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'https://fastapi-deployment-ashy.vercel.app').replace(/\/$/, '')
 const OPTION_CHAIN_URL = `${API_BASE_URL}/option-chain`
 
-function getCurrentDate(){
+function getCurrentDate() {
   const today = new Date()
 
   const year = today.getFullYear()
@@ -103,7 +103,10 @@ function exportToExcel(rows) {
 }
 
 function App() {
-  const [history, setHistory] = useState([])
+  const [history, setHistory] = useState(() => {
+    const saved = localStorage.getItem("optionChainHistory");
+    return saved ? JSON.parse(saved) : [];
+  });
   const [status, setStatus] = useState('Waiting for market data...')
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [nextOpenLabel, setNextOpenLabel] = useState(() => formatNextOpenLabel(getNextMarketOpenTime()))
@@ -125,7 +128,11 @@ function App() {
 
       if (marketOpen) {
         if (lastSessionDateRef.current !== sessionDateKey) {
-          setHistory([])
+          setHistory(prev => {
+            const updated = [...prev, snapshot];
+            localStorage.setItem("optionChainHistory", JSON.stringify(updated));
+            return updated;
+          });
           lastSessionDateRef.current = sessionDateKey
         }
         setStatus('Market is open. Collecting values every 15 minutes')
