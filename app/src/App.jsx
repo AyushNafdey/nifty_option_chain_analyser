@@ -62,10 +62,9 @@ function getCurrentDate() {
 
   const year = today.getFullYear()
   const month = String(today.getMonth() + 1).padStart(2, '0')
-  const day = today.getDay()
+  const day = String(today.getDate()).padStart(2, '0')
 
   return `${day}-${month}-${year}`
-
 }
 
 function exportToCsv(rows) {
@@ -104,9 +103,9 @@ function exportToExcel(rows) {
 
 function App() {
   const [history, setHistory] = useState(() => {
-    const saved = localStorage.getItem("optionChainHistory");
-    return saved ? JSON.parse(saved) : [];
-  });
+    const saved = localStorage.getItem("optionChainHistory")
+    return saved ? JSON.parse(saved) : []
+  })
   const [status, setStatus] = useState('Waiting for market data...')
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [nextOpenLabel, setNextOpenLabel] = useState(() => formatNextOpenLabel(getNextMarketOpenTime()))
@@ -128,11 +127,8 @@ function App() {
 
       if (marketOpen) {
         if (lastSessionDateRef.current !== sessionDateKey) {
-          setHistory(prev => {
-            const updated = [...prev, snapshot];
-            localStorage.setItem("optionChainHistory", JSON.stringify(updated));
-            return updated;
-          });
+          setHistory([])
+          localStorage.removeItem("optionChainHistory")
           lastSessionDateRef.current = sessionDateKey
         }
         setStatus('Market is open. Collecting values every 15 minutes')
@@ -166,7 +162,11 @@ function App() {
           peChange: data['PE OI Change'] ?? 0,
         }
 
-        setHistory((prev) => [...prev, snapshot])
+        setHistory((prev) => {
+          const updated = [...prev, snapshot]
+          localStorage.setItem("optionChainHistory", JSON.stringify(updated))
+          return updated
+        })
         setStatus('Collecting values continuously every 15 minutes')
       } catch (error) {
         if (!isMounted) return
@@ -188,6 +188,7 @@ function App() {
       if (marketOpen) {
         if (lastSessionDateRef.current !== sessionDateKey) {
           setHistory([])
+          localStorage.removeItem("optionChainHistory")
           lastSessionDateRef.current = sessionDateKey
         }
         loadData()
