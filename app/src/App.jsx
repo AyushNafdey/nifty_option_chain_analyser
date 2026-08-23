@@ -14,6 +14,8 @@ function isMarketOpen(date = new Date()) {
   const currentMinutes = date.getHours() * 60 + date.getMinutes()
   const marketOpenMinutes = 9 * 60 + 17
   const marketCloseMinutes = 15 * 60 + 32
+  // const marketOpenMinutes = 0
+  // const marketCloseMinutes = 24 * 60
 
   return currentMinutes >= marketOpenMinutes && currentMinutes < marketCloseMinutes
 }
@@ -57,58 +59,18 @@ function formatIndianNumber(value) {
   return new Intl.NumberFormat('en-IN').format(value)
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'https://fastapi-deployment-ashy.vercel.app').replace(/\/$/, '')
-const OPTION_CHAIN_URL = `${API_BASE_URL}/option-chain`
-
-function getCurrentDate() {
-  const today = new Date()
-
-  const year = today.getFullYear()
-  const month = String(today.getMonth() + 1).padStart(2, '0')
-  const day = String(today.getDate()).padStart(2, '0')
-
-  return `${day}-${month}-${year}`
-}
-
-function exportToCsv(rows) {
-  const header = ['Time', 'Total CE OI', 'Total PE OI', 'CE OI Change', 'PE OI Change']
-  const date = getCurrentDate()
-  const csvRows = [
-    header.join(','),
-    ...rows.map((row) =>
-      [row.time, row.ceOi, row.peOi, row.ceChange, row.peChange]
-        .map((value) => `"${String(value).replace(/"/g, '""')}"`)
-        .join(','),
-    ),
-  ]
-
-  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `Option_Chain_Data_${date}.csv`
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
-function exportToExcel(rows) {
-  const date = getCurrentDate()
-  const worksheetData = [
-    ['Time', 'Total CE OI', 'Total PE OI', 'CE OI Change', 'PE OI Change'],
-    ...rows.map((row) => [row.time, row.ceOi, row.peOi, row.ceChange, row.peChange]),
-  ]
-
-  const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Option Chain')
-  XLSX.writeFile(workbook, `Option_Chain_Data_${date}.xlsx`)
-}
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')
+const HISTORY_URL = `${API_BASE_URL}/history`
+const LATEST_URL = `${API_BASE_URL}/latest-data`
+const POLL_INTERVAL_MINUTES = Number(import.meta.env.VITE_POLL_INTERVAL_MINUTES || '1')
+const POLL_INTERVAL_MS = Number.isFinite(POLL_INTERVAL_MINUTES) && POLL_INTERVAL_MINUTES > 0
+  ? POLL_INTERVAL_MINUTES * 60000
+  : 60000
 
 function App() {
-  const [history, setHistory] = useState(() => {
-    const saved = localStorage.getItem("optionChainHistory")
-    return saved ? JSON.parse(saved) : []
-  })
+  // history now solely comes from backend; localStorage removed
+  const [history, setHistory] = useState([])
+  const historyRef = useRef([])
   const [status, setStatus] = useState('Waiting for market data...')
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [nextOpenLabel, setNextOpenLabel] = useState(() => formatNextOpenLabel(getNextMarketOpenTime()))
@@ -117,6 +79,7 @@ function App() {
 
   useEffect(() => {
     let isMounted = true
+    let pollTimer = null
 
     const updateSessionState = () => {
       const now = new Date()
@@ -130,85 +93,109 @@ function App() {
       if (!isMounted) return
 
       if (marketOpen) {
-        if (lastSessionDateRef.current !== sessionDateKey) {
-          setHistory([])
-          localStorage.removeItem("optionChainHistory")
-          lastSessionDateRef.current = sessionDateKey
-        }
-        setStatus('Market is open. Collecting values every 15 minutes')
+        setStatus(`Market is open. Collecting values every ${POLL_INTERVAL_MINUTES} minute${POLL_INTERVAL_MINUTES === 1 ? '' : 's'}`)
       } else if (isWeekend(now)) {
         setStatus(`Market is closed for the weekend. Next market open: ${formatNextOpenLabel(nextOpen)}`)
       } else {
         setStatus('Market session has ended. Data collection stopped. Previous rows are preserved until the next session opens.')
       }
+
+      // track session day change for client-side display; backend /history will be authoritative
+      lastSessionDateRef.current = sessionDateKey
     }
 
-    const loadData = async () => {
-      const now = new Date()
-
-      if (!isMarketOpen(now)) {
-        updateSessionState()
-        return
-      }
-
+    const loadHistory = async () => {
       try {
-        const response = await fetch(OPTION_CHAIN_URL)
-        const result = await response.json()
-
-        if (!isMounted) return
-
-        const data = result?.data ?? {}
-        setExpiry(data.selectedExpiry ?? "")
-        const snapshot = {
-          time: formatTime(now),
-          ceOi: data['Total CE OI'] ?? 0,
-          peOi: data['Total PE OI'] ?? 0,
-          ceChange: data['CE OI Change'] ?? 0,
-          peChange: data['PE OI Change'] ?? 0,
+        const res = await fetch(HISTORY_URL)
+        if (!res.ok) {
+          throw new Error(`Failed to load history: ${res.status}`)
         }
-
-        setHistory((prev) => {
-          const updated = [...prev, snapshot]
-          localStorage.setItem("optionChainHistory", JSON.stringify(updated))
-          return updated
-        })
-        setStatus('Collecting values continuously every 15 minutes')
-      } catch (error) {
+        const result = await res.json()
         if (!isMounted) return
-        setStatus('Unable to fetch values from FastAPI. Check that the backend is running.')
+
+        historyRef.current = result.map((rec) => {
+          const ts = new Date(rec.timestamp)
+          return {
+            timestamp: rec.timestamp,
+            time: formatTime(ts),
+            ceOi: rec.data?.total_ce_oi ?? 0,
+            peOi: rec.data?.total_pe_oi ?? 0,
+            ceChange: rec.data?.ce_oi_change ?? 0,
+            peChange: rec.data?.pe_oi_change ?? 0,
+          }
+        })
+
+        setHistory(historyRef.current)
+
+        // set expiry from latest if available
+        const latest = result.length ? result[result.length - 1] : null
+        setExpiry((latest && latest.data && latest.data.selected_expiry) || "")
+      } catch (error) {
+        console.error(error)
+        if (!isMounted) return
+        setStatus('Unable to fetch history from backend. Check that the backend is running.')
       }
     }
 
-    updateSessionState()
-    loadData()
-
-    const timer = setInterval(() => {
-      const now = new Date()
-      const marketOpen = isMarketOpen(now)
-      const sessionDateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-
-      setIsSessionActive(marketOpen)
-      setNextOpenLabel(formatNextOpenLabel(getNextMarketOpenTime(now)))
-
-      if (marketOpen) {
-        if (lastSessionDateRef.current !== sessionDateKey) {
-          setHistory([])
-          localStorage.removeItem("optionChainHistory")
-          lastSessionDateRef.current = sessionDateKey
+    const fetchLatestAndAppend = async () => {
+      try {
+        const res = await fetch(LATEST_URL)
+        if (!res.ok) {
+          // 204 or 404 or server error — ignore silently but log
+          console.warn('Latest-data fetch failed', res.status)
+          return
         }
-        loadData()
-      } else if (isWeekend(now)) {
-        setStatus(`Market is closed for the weekend. Next market open: ${formatNextOpenLabel(getNextMarketOpenTime(now))}`)
-      } else {
-        setStatus('Market session has ended. Data collection stopped. Previous rows are preserved until the next session opens.')
+        const result = await res.json()
+        if (!result) return
+        if (!isMounted) return
+
+        const incomingTimestamp = result.timestamp // ISO string
+        const last = historyRef.current.length ? historyRef.current[historyRef.current.length - 1].timestamp : null
+
+        if (incomingTimestamp && incomingTimestamp !== last) {
+          const ts = new Date(incomingTimestamp)
+          const newRow = {
+            timestamp: incomingTimestamp,
+            time: formatTime(ts),
+            ceOi: result.data?.total_ce_oi ?? 0,
+            peOi: result.data?.total_pe_oi ?? 0,
+            ceChange: result.data?.ce_oi_change ?? 0,
+            peChange: result.data?.pe_oi_change ?? 0,
+          }
+
+          setHistory((prev) => {
+            // Avoid duplicate appends in race conditions: check last again
+            const lastLocal = prev.length ? prev[prev.length - 1].timestamp : null
+            if (lastLocal === incomingTimestamp) return prev
+            const updated = [...prev, newRow]
+            historyRef.current = updated
+            return updated
+          })
+        }
+
+        // always update expiry to latest if present
+        setExpiry((result.data && result.data.selected_expiry) || "")
+      } catch (error) {
+        console.error('Error fetching latest data:', error)
       }
-    }, 900000)
+    }
+
+    // initial actions
+    updateSessionState()
+    loadHistory()
+
+    // poll at a configurable cadence for the latest snapshot; backend scheduler uses the same cadence
+    pollTimer = setInterval(() => {
+      updateSessionState()
+      fetchLatestAndAppend()
+    }, POLL_INTERVAL_MS)
 
     return () => {
       isMounted = false
-      clearInterval(timer)
+      if (pollTimer) clearInterval(pollTimer)
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // run once on mount
 
   const summary = useMemo(() => {
     if (!history.length) {
@@ -222,6 +209,50 @@ function App() {
       totalSamples: history.length,
     }
   }, [history])
+
+  function getCurrentDate() {
+    const today = new Date()
+
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+
+    return `${day}-${month}-${year}`
+  }
+
+  function exportToCsv(rows) {
+    const header = ['Time', 'Total CE OI', 'Total PE OI', 'CE OI Change', 'PE OI Change']
+    const date = getCurrentDate()
+    const csvRows = [
+      header.join(','),
+      ...rows.map((row) =>
+        [row.time, row.ceOi, row.peOi, row.ceChange, row.peChange]
+          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+          .join(','),
+      ),
+    ]
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `Option_Chain_Data_${date}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function exportToExcel(rows) {
+    const date = getCurrentDate()
+    const worksheetData = [
+      ['Time', 'Total CE OI', 'Total PE OI', 'CE OI Change', 'PE OI Change'],
+      ...rows.map((row) => [row.time, row.ceOi, row.peOi, row.ceChange, row.peChange]),
+    ]
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Option Chain')
+    XLSX.writeFile(workbook, `Option_Chain_Data_${date}.xlsx`)
+  }
 
   const handleExport = (format) => {
     if (!history.length) return
@@ -316,7 +347,7 @@ function App() {
                   </tr>
                 ) : (
                   history.map((row, index) => (
-                    <tr key={`${row.time}-${index}`} className="transition hover:bg-slate-800/70">
+                    <tr key={`${row.timestamp}-${index}`} className="transition hover:bg-slate-800/70">
                       <td className="px-6 py-4 font-semibold text-white">{row.time}</td>
                       <td className="px-6 py-4">{formatIndianNumber(row.ceOi)}</td>
                       <td className="px-6 py-4">{formatIndianNumber(row.peOi)}</td>
