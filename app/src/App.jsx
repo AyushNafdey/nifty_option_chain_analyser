@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
+import AIAnalysis from './components/AIAnalysis'
 import MarketSummary from './components/MarketSummary'
 import MarketTimeline from './components/MarketTimeline'
 
@@ -49,7 +50,7 @@ function formatNextOpenLabel(date) {
 function formatTime(date) {
   return date.toLocaleTimeString([], {
     day: '2-digit',
-    month: '2-digit', 
+    month: '2-digit',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
@@ -78,6 +79,8 @@ function App() {
   const [nextOpenLabel, setNextOpenLabel] = useState(() => formatNextOpenLabel(getNextMarketOpenTime()))
   const lastSessionDateRef = useRef(null)
   const [expiry, setExpiry] = useState("")
+  const [isAIAnalysisOpen, setIsAIAnalysisOpen] = useState(false)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     let isMounted = true
@@ -266,9 +269,51 @@ function App() {
     }
   }
 
+  const openAIAnalysis = () => {
+    setIsAIAnalysisOpen(true)
+    setIsMobileMenuOpen(false)
+  }
+
+  const latestRow = history.length ? history[history.length - 1] : null
+
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={openAIAnalysis}
+            className="hidden rounded-lg border border-cyan-400/40 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/20 md:inline-flex"
+          >
+            Generate AI Analysis
+          </button>
+
+          <div className="relative md:hidden">
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen((isOpen) => !isOpen)}
+              aria-expanded={isMobileMenuOpen}
+              aria-controls="mobile-actions-menu"
+              aria-label="Open actions menu"
+              className="flex h-11 w-11 flex-col items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 text-slate-200 transition hover:bg-slate-800"
+            >
+              <span className="h-0.5 w-5 bg-current" />
+              <span className="h-0.5 w-5 bg-current" />
+              <span className="h-0.5 w-5 bg-current" />
+            </button>
+            {isMobileMenuOpen && (
+              <div id="mobile-actions-menu" className="absolute right-0 top-14 z-10 w-56 rounded-xl border border-slate-700 bg-slate-900 p-2 shadow-xl">
+                <button
+                  type="button"
+                  onClick={openAIAnalysis}
+                  className="w-full rounded-lg px-3 py-3 text-left text-sm font-medium text-cyan-300 transition hover:bg-slate-800"
+                >
+                  Generate AI Analysis
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
         <MarketSummary
           summary={summary}
           expiry={expiry}
@@ -278,6 +323,14 @@ function App() {
           hasHistory={history.length > 0}
           onExport={handleExport}
         />
+        {isAIAnalysisOpen && (
+          <AIAnalysis
+            summary={summary}
+            latestRow={latestRow}
+            expiry={expiry}
+            onClose={() => setIsAIAnalysisOpen(false)}
+          />
+        )}
         <MarketTimeline history={history} status={status} formatNumber={formatIndianNumber} />
       </div>
     </main>
