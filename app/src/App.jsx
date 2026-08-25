@@ -67,8 +67,8 @@ const HISTORY_URL = `${API_BASE_URL}/history`
 const LATEST_URL = `${API_BASE_URL}/latest-data`
 const POLL_INTERVAL_MINUTES = Number(import.meta.env.VITE_POLL_INTERVAL_MINUTES || '1')
 const POLL_INTERVAL_MS = Number.isFinite(POLL_INTERVAL_MINUTES) && POLL_INTERVAL_MINUTES > 0
-  ? POLL_INTERVAL_MINUTES * 60000
-  : 60000
+  ? POLL_INTERVAL_MINUTES * 60000000
+  : 60000000
 
 function App() {
   // history now solely comes from backend; localStorage removed
@@ -188,6 +188,7 @@ function App() {
     // initial actions
     updateSessionState()
     loadHistory()
+    fetchLatestAndAppend()
 
     // poll at a configurable cadence for the latest snapshot; backend scheduler uses the same cadence
     pollTimer = setInterval(() => {
@@ -199,8 +200,7 @@ function App() {
       isMounted = false
       if (pollTimer) clearInterval(pollTimer)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // run once on mount
+  }, [])
 
   const summary = useMemo(() => {
     if (!history.length) {
