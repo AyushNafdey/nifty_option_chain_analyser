@@ -67,8 +67,8 @@ const HISTORY_URL = `${API_BASE_URL}/history`
 const LATEST_URL = `${API_BASE_URL}/latest-data`
 const POLL_INTERVAL_MINUTES = Number(import.meta.env.VITE_POLL_INTERVAL_MINUTES || '1')
 const POLL_INTERVAL_MS = Number.isFinite(POLL_INTERVAL_MINUTES) && POLL_INTERVAL_MINUTES > 0
-  ? POLL_INTERVAL_MINUTES * 60000000
-  : 60000000
+  ? POLL_INTERVAL_MINUTES * 60000
+  : 60000
 
 function App() {
   // history now solely comes from backend; localStorage removed
@@ -185,10 +185,11 @@ function App() {
       }
     }
 
-    // initial actions
+    // Load the baseline first so the history response cannot overwrite the latest row.
     updateSessionState()
-    loadHistory()
-    fetchLatestAndAppend()
+    loadHistory().then(() => {
+      if (isMounted) fetchLatestAndAppend()
+    })
 
     // poll at a configurable cadence for the latest snapshot; backend scheduler uses the same cadence
     pollTimer = setInterval(() => {
