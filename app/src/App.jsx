@@ -63,7 +63,6 @@ function formatIndianNumber(value) {
 }
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')
-const HISTORY_URL = `${API_BASE_URL}/history`
 const LATEST_URL = `${API_BASE_URL}/latest-data`
 const POLL_INTERVAL_MINUTES = Number(import.meta.env.VITE_POLL_INTERVAL_MINUTES || '1')
 const POLL_INTERVAL_MS = Number.isFinite(POLL_INTERVAL_MINUTES) && POLL_INTERVAL_MINUTES > 0
@@ -71,9 +70,7 @@ const POLL_INTERVAL_MS = Number.isFinite(POLL_INTERVAL_MINUTES) && POLL_INTERVAL
   : 60000
 
 function App() {
-  // history now solely comes from backend; localStorage removed
   const [history, setHistory] = useState([])
-  const historyRef = useRef([])
   const [status, setStatus] = useState('Waiting for market data...')
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [nextOpenLabel, setNextOpenLabel] = useState(() => formatNextOpenLabel(getNextMarketOpenTime()))
@@ -105,96 +102,48 @@ function App() {
         setStatus('Market session has ended. Data collection stopped. Previous rows are preserved until the next session opens.')
       }
 
-      // track session day change for client-side display; backend /history will be authoritative
+      // Track session day changes for the client-side display.
       lastSessionDateRef.current = sessionDateKey
     }
 
-    const loadHistory = async () => {
-      try {
-        const res = await fetch(HISTORY_URL)
-        if (!res.ok) {
-          throw new Error(`Failed to load history: ${res.status}`)
-        }
-        const result = await res.json()
-        if (!isMounted) return
-
-        historyRef.current = result.map((rec) => {
-          const ts = new Date(rec.timestamp)
-          return {
-            timestamp: rec.timestamp,
-            time: formatTime(ts),
-            ceOi: rec.data?.total_ce_oi ?? 0,
-            peOi: rec.data?.total_pe_oi ?? 0,
-            ceChange: rec.data?.ce_oi_change ?? 0,
-            peChange: rec.data?.pe_oi_change ?? 0,
-          }
-        })
-
-        setHistory(historyRef.current)
-
-        // set expiry from latest if available
-        const latest = result.length ? result[result.length - 1] : null
-        setExpiry((latest && latest.data && latest.data.selected_expiry) || "")
-      } catch (error) {
-        console.error(error)
-        if (!isMounted) return
-        setStatus('Unable to fetch history from backend. Check that the backend is running.')
-      }
-    }
-
-    const fetchLatestAndAppend = async () => {
+    const fetchLatest = async () => {
       try {
         const res = await fetch(LATEST_URL)
         if (!res.ok) {
-          // 204 or 404 or server error — ignore silently but log
-          console.warn('Latest-data fetch failed', res.status)
-          return
+          throw new Error(`Failed to load latest data: ${res.status}`)
         }
         const result = await res.json()
-        if (!result) return
         if (!isMounted) return
 
-        const incomingTimestamp = result.timestamp // ISO string
-        const last = historyRef.current.length ? historyRef.current[historyRef.current.length - 1].timestamp : null
-
-        if (incomingTimestamp && incomingTimestamp !== last) {
-          const ts = new Date(incomingTimestamp)
-          const newRow = {
-            timestamp: incomingTimestamp,
-            time: formatTime(ts),
-            ceOi: result.data?.total_ce_oi ?? 0,
-            peOi: result.data?.total_pe_oi ?? 0,
-            ceChange: result.data?.ce_oi_change ?? 0,
-            peChange: result.data?.pe_oi_change ?? 0,
-          }
-
-          setHistory((prev) => {
-            // Avoid duplicate appends in race conditions: check last again
-            const lastLocal = prev.length ? prev[prev.length - 1].timestamp : null
-            if (lastLocal === incomingTimestamp) return prev
-            const updated = [...prev, newRow]
-            historyRef.current = updated
-            return updated
-          })
+        if (!result) {
+          setHistory([])
+          setExpiry('')
+          return
         }
 
-        // always update expiry to latest if present
-        setExpiry((result.data && result.data.selected_expiry) || "")
+        const ts = new Date(result.timestamp)
+        setHistory([{
+          timestamp: result.timestamp,
+          time: formatTime(ts),
+          ceOi: result.data?.total_ce_oi ?? 0,
+          peOi: result.data?.total_pe_oi ?? 0,
+          ceChange: result.data?.ce_oi_change ?? 0,
+          peChange: result.data?.pe_oi_change ?? 0,
+        }])
+        setExpiry(result.data?.selected_expiry || '')
       } catch (error) {
-        console.error('Error fetching latest data:', error)
+        console.error(error)
+        if (!isMounted) return
+        setStatus('Unable to fetch latest data from backend. Check that the backend is running.')
       }
     }
 
-    // Load the baseline first so the history response cannot overwrite the latest row.
     updateSessionState()
-    loadHistory().then(() => {
-      if (isMounted) fetchLatestAndAppend()
-    })
+    fetchLatest()
 
-    // poll at a configurable cadence for the latest snapshot; backend scheduler uses the same cadence
     pollTimer = setInterval(() => {
       updateSessionState()
-      fetchLatestAndAppend()
+      fetchLatest()
     }, POLL_INTERVAL_MS)
 
     return () => {
