@@ -63,7 +63,7 @@ function formatIndianNumber(value) {
 }
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')
-const LATEST_URL = `${API_BASE_URL}/latest-data`
+const HISTORY_URL = `${API_BASE_URL}/history`
 const POLL_INTERVAL_MINUTES = Number(import.meta.env.VITE_POLL_INTERVAL_MINUTES || '15')
 const POLL_INTERVAL_MS = Number.isFinite(POLL_INTERVAL_MINUTES) && POLL_INTERVAL_MINUTES > 0
   ? POLL_INTERVAL_MINUTES * 60000
@@ -106,44 +106,38 @@ function App() {
       lastSessionDateRef.current = sessionDateKey
     }
 
-    const fetchLatest = async () => {
+    const fetchHistory = async () => {
       try {
-        const res = await fetch(LATEST_URL)
+        const res = await fetch(HISTORY_URL)
         if (!res.ok) {
-          throw new Error(`Failed to load latest data: ${res.status}`)
+          throw new Error(`Failed to load snapshot history: ${res.status}`)
         }
-        const result = await res.json()
+        const results = await res.json()
         if (!isMounted) return
 
-        if (!result) {
-          setHistory([])
-          setExpiry('')
-          return
-        }
-
-        const ts = new Date(result.timestamp)
-        setHistory([{
+        const snapshots = results.map((result) => ({
           timestamp: result.timestamp,
-          time: formatTime(ts),
+          time: formatTime(new Date(result.timestamp)),
           ceOi: result.data?.total_ce_oi ?? 0,
           peOi: result.data?.total_pe_oi ?? 0,
           ceChange: result.data?.ce_oi_change ?? 0,
           peChange: result.data?.pe_oi_change ?? 0,
-        }])
-        setExpiry(result.data?.selected_expiry || '')
+        }))
+        setHistory(snapshots)
+        setExpiry(results.length ? results[results.length - 1].data?.selected_expiry || '' : '')
       } catch (error) {
         console.error(error)
         if (!isMounted) return
-        setStatus('Unable to fetch latest data from backend. Check that the backend is running.')
+        setStatus('Unable to fetch snapshot history from backend. Check that the backend is running.')
       }
     }
 
     updateSessionState()
-    fetchLatest()
+    fetchHistory()
 
     pollTimer = setInterval(() => {
       updateSessionState()
-      fetchLatest()
+      fetchHistory()
     }, POLL_INTERVAL_MS)
 
     return () => {
